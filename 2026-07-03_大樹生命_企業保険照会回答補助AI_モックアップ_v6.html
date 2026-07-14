@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<!--
+  大樹生命 企業保険部向け 照会回答補助AI モックアップ v6
+  外部CDN：Google Fonts（Noto Sans JP）のみ。CSS/JSはすべてインライン。
+  v3からの変更：
+  ・AI回答に商品の正式名称（○○保険（有配当20XX）・引受保険会社）を併記
+  ・担当者への照会は本ツールの機能外（電話・メールで実施）である旨を明確化。
+    本ツールは「確認した回答を貼り付けて登録→次回以降AIが参照」のみを担う
+  ・回答不可（低確度）の場合は参照ドキュメントを表示しない（文書に記載があれば最初から回答するため）
+  ・「＋ 新しい照会」でチャットを新規に開始できる
+  ・契約者・商品を検索・選択できるパネルを追加（選択→送信でAIが聞き返す／コピーで入力欄へ挿入）
+  ・サイドバー表記を「大樹生命」へ
+  v4からの変更（v5）：
+  ・名称を提案書と統一（照会ナレッジアシスタント → 照会回答補助AI）
+  ・フェニックスケアプラス介護保険金の支払事由を公式公表情報に整合（要介護2以上）
+  ・プラチナフェニックス第1保険期間中の疾病死亡の支払額を「責任準備金額」に修正
+  v5からの変更（v6）：
+  ・AI回答に「回答精度の評価」UIを追加（そのまま自動応対に利用してよいかを担当者が評価し、ナレッジDBに記録）
+  ・「ナレッジDB」ページを新設（承認済／未承認／差戻しのステータス、企業・商品・出所カラム、承認操作）
+  ・担当者回答の登録直後は「未承認（検証中）」となり、承認後に自動応対可となる流れを明示
+  契約者名・契約内容・数値はすべて仮想のデモデータ。商品情報はデモ用の要約であり、
+  正確な内容は実際の約款・パンフレットによります。
+-->
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>企業保険 照会回答補助AI（モックアップ）</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --green:#00694a; --green-deep:#0c3527; --green-mid:#14523e;
+    --green-pale:#e9f2ee; --green-line:#cde2d9;
+    --bg:#f6f7f6; --card:#ffffff; --ink:#20242b; --muted:#6e7681;
+    --line:#e4e7e9; --quote:#f2f4f3;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Noto Sans JP',sans-serif;}
+  body{background:var(--bg);color:var(--ink);font-size:13.5px;display:flex;min-height:100vh;min-width:1200px;}
+  button{cursor:pointer;font-family:inherit;}
+
+  /* ===== サイドバー ===== */
+  .side{width:232px;background:var(--green-deep);color:#fff;display:flex;flex-direction:column;flex-shrink:0;}
+  .brand{padding:22px 20px 14px;}
+  .brand .t1{font-weight:700;font-size:14.5px;line-height:1.45;}
+  .brand .t2{font-size:11px;color:#9dbfb1;margin-top:6px;}
+  .newq{margin:4px 12px 10px;}
+  .newq button{width:100%;background:var(--green);border:none;color:#fff;border-radius:9px;padding:11px;font-size:13.5px;font-weight:700;}
+  .newq button:hover{background:#00815b;}
+  .nav{display:flex;flex-direction:column;gap:2px;padding:0 12px;}
+  .nav > button{background:none;border:none;color:#c3d6cd;padding:10px 14px;border-radius:8px;font-size:13.5px;text-align:left;width:100%;}
+  .nav > button.on{background:var(--green-mid);color:#fff;font-weight:700;}
+  .nav > button:hover:not(.on){background:rgba(255,255,255,.06);}
+  .recent{padding:14px 12px 0;}
+  .recent .rl{font-size:10.5px;color:#7fa294;letter-spacing:.06em;padding:0 8px 6px;}
+  .recent button{display:block;width:100%;background:none;border:none;color:#a8c4b8;text-align:left;font-size:11.8px;padding:7px 10px;border-radius:7px;line-height:1.5;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .recent button:hover{background:rgba(255,255,255,.06);}
+  .demo-note{margin:14px 12px;background:rgba(255,255,255,.07);border-radius:8px;padding:10px 12px;font-size:10.8px;color:#9dbfb1;line-height:1.65;}
+  .side .foot{margin-top:auto;padding:14px 20px;border-top:1px solid rgba(255,255,255,.12);font-size:12px;color:#c3d6cd;}
+  .side .foot b{color:#fff;font-weight:500;}
+
+  /* ===== メイン ===== */
+  .main{flex:1;display:flex;flex-direction:column;min-width:0;}
+  .phead{background:var(--card);border-bottom:1px solid var(--line);padding:14px 28px;display:flex;align-items:baseline;gap:14px;}
+  .phead h1{font-size:16px;font-weight:700;}
+  .phead .sub{color:var(--muted);font-size:12px;}
+  .phead .right{margin-left:auto;font-size:12px;color:var(--muted);}
+  .content{flex:1;overflow-y:auto;padding:22px 28px;}
+  .page{display:none;} .page.on{display:block;}
+
+  /* ===== 検索・選択パネル ===== */
+  .finder{max-width:900px;margin:0 auto 18px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 18px;}
+  .finder .lbl{font-size:12px;color:var(--muted);margin-bottom:9px;}
+  .finder input{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 13px;font-size:12.8px;background:#fafbfa;margin-bottom:10px;}
+  .fgroup{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px;}
+  .fgroup .gl{font-size:11.5px;color:var(--muted);width:52px;flex-shrink:0;}
+  .fitem{display:inline-flex;align-items:center;border:1px solid var(--green-line);border-radius:16px;overflow:hidden;background:var(--green-pale);}
+  .fitem .nm{border:none;background:none;color:var(--green);padding:6px 4px 6px 14px;font-size:12.3px;}
+  .fitem .nm:hover{text-decoration:underline;}
+  .fitem .cp{border:none;background:none;color:#7ea595;padding:6px 12px 6px 6px;font-size:10.5px;border-left:1px dotted var(--green-line);margin-left:4px;}
+  .fitem .cp:hover{color:var(--green);}
+  .finder .hint{font-size:11px;color:var(--muted);margin-top:6px;}
+
+  /* ===== チャット ===== */
+  .chatwrap{max-width:900px;margin:0 auto;}
+  .msg-q{display:flex;justify-content:flex-end;margin:18px 0 12px;}
+  .msg-q .b{background:var(--green);color:#fff;border-radius:14px 14px 3px 14px;padding:11px 16px;max-width:78%;font-size:13.5px;line-height:1.7;}
+  .msg-a{display:flex;gap:10px;margin-bottom:8px;}
+  .msg-a .av{width:30px;height:30px;border-radius:8px;background:var(--green-pale);border:1px solid var(--green-line);color:var(--green);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0;}
+  .acard{background:var(--card);border:1px solid var(--line);border-radius:3px 14px 14px 14px;padding:16px 18px;flex:1;}
+  .tags{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
+  .tag{background:var(--green-pale);color:var(--green);border-radius:4px;padding:2px 9px;font-size:11px;font-weight:500;}
+  .tag.warn{background:#f4f1e5;color:#8a7a2e;}
+  .ans{font-size:13.5px;line-height:1.85;}
+  .ans p{margin-bottom:8px;}
+  .ans ol{margin:2px 0 10px 20px;}
+  .ans ol li{margin-bottom:4px;}
+  .ans ul{margin:2px 0 10px 0;list-style:none;}
+  .ans ul li{padding-left:16px;position:relative;margin-bottom:4px;}
+  .ans ul li::before{content:"・";position:absolute;left:2px;color:var(--green);}
+  .ans .em{font-weight:700;}
+  .formal{font-size:12px;color:var(--muted);background:#fafbfa;border:1px solid var(--line);border-radius:7px;padding:7px 12px;margin-bottom:10px;line-height:1.6;}
+  .cchips{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+  .cchips button{background:#fff;border:1px solid var(--green-line);color:var(--green);border-radius:16px;padding:6px 14px;font-size:12.3px;}
+  .cchips button:hover{background:var(--green-pale);}
+  .lowconf{background:#fbfaf4;border:1px solid #e8e2c8;border-radius:8px;padding:10px 14px;font-size:12.5px;color:#6b5f28;line-height:1.75;margin:10px 0;}
+  .refs{margin-top:12px;border-top:1px solid var(--line);padding-top:12px;}
+  .refs .rlbl{font-size:12px;font-weight:700;margin-bottom:8px;}
+  .ref{background:var(--quote);border-left:3px solid var(--green);border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:8px;}
+  .ref.kb{border-left-color:#8a7a2e;background:#fbfaf4;}
+  .ref .rt{font-size:12.5px;font-weight:700;}
+  .ref .rt .pg{font-weight:400;color:var(--muted);font-size:11px;margin-left:8px;}
+  .ref .rq{font-size:12.3px;color:#4b5563;line-height:1.7;margin-top:5px;}
+  .ref a{font-size:11.5px;color:var(--green);text-decoration:none;display:inline-block;margin-top:4px;}
+  .note{margin-top:12px;font-size:11.5px;color:var(--muted);background:#fafbfa;border:1px solid var(--line);border-radius:8px;padding:8px 12px;line-height:1.6;}
+  .acts{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+  .acts button{border-radius:7px;padding:7px 16px;font-size:12.3px;border:1px solid var(--line);background:#fff;color:var(--muted);}
+  .acts button.pri{color:var(--green);border-color:var(--green-line);background:var(--green-pale);font-weight:500;}
+  .acts button:disabled{opacity:.75;cursor:default;}
+  .rel{margin-top:12px;font-size:12px;color:var(--muted);}
+  .rel a{color:var(--green);text-decoration:none;cursor:pointer;}
+  .thinking{display:flex;gap:5px;padding:14px 4px;}
+  .thinking span{width:7px;height:7px;border-radius:50%;background:#b7c9c1;animation:bl 1.1s infinite;}
+  .thinking span:nth-child(2){animation-delay:.18s;} .thinking span:nth-child(3){animation-delay:.36s;}
+  @keyframes bl{0%,80%,100%{opacity:.3}40%{opacity:1}}
+  .inputbar{position:sticky;bottom:0;background:linear-gradient(transparent,var(--bg) 30%);padding:16px 0 4px;}
+  .ibox{max-width:900px;margin:0 auto;background:var(--card);border:1px solid var(--line);border-radius:12px;display:flex;align-items:center;padding:6px 8px 6px 18px;box-shadow:0 4px 16px rgba(20,40,30,.06);}
+  .ibox input{flex:1;border:none;outline:none;font-size:13.5px;padding:10px 0;background:none;}
+  .ibox button{background:var(--green);color:#fff;border:none;border-radius:9px;padding:10px 20px;font-size:13px;font-weight:700;}
+  .ibox button:hover{background:#00563c;}
+
+  /* ===== 担当者回答の登録パネル ===== */
+  .confirm{margin-top:14px;border:1px solid var(--green-line);border-radius:10px;background:#fbfdfc;padding:14px 16px;}
+  .confirm h4{font-size:13px;color:var(--green);margin-bottom:4px;}
+  .confirm .steps{font-size:11.8px;color:var(--muted);line-height:1.75;margin-bottom:10px;}
+  .confirm .steps b{color:#6b5f28;font-weight:700;}
+  .confirm label{font-size:11.5px;color:var(--muted);display:block;margin:8px 0 4px;}
+  .confirm input[type=text], .confirm textarea{width:100%;border:1px solid var(--line);border-radius:7px;background:#fff;padding:9px 12px;font-size:12.8px;line-height:1.7;resize:vertical;}
+  .confirm textarea{min-height:96px;}
+  .confirm .row{display:flex;justify-content:flex-end;gap:8px;margin-top:10px;}
+  .confirm .row button{border-radius:7px;padding:8px 18px;font-size:12.5px;border:1px solid var(--line);background:#fff;color:var(--muted);}
+  .confirm .row .reg{background:var(--green);border-color:var(--green);color:#fff;font-weight:700;}
+  .kbdone{margin-top:14px;border:1px solid var(--green-line);border-radius:10px;background:var(--green-pale);padding:14px 16px;font-size:12.8px;line-height:1.8;}
+  .kbdone b{color:var(--green);}
+  .kbtag{display:inline-block;background:#fff;border:1px solid var(--green-line);color:var(--green);border-radius:4px;padding:1px 8px;font-size:11px;font-weight:700;}
+
+  /* ===== テーブル共通 ===== */
+  .toolrow{display:flex;gap:8px;margin-bottom:8px;align-items:center;}
+  .fchip{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:5px 14px;font-size:12px;color:var(--muted);cursor:pointer;}
+  .fchip.on{background:var(--green-pale);border-color:var(--green-line);color:var(--green);font-weight:500;}
+  .toolrow .sp{margin-left:auto;font-size:12px;color:var(--muted);}
+  .pgnote{font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.7;}
+  .tbl{width:100%;background:var(--card);border:1px solid var(--line);border-radius:12px;border-collapse:separate;border-spacing:0;overflow:hidden;}
+  .tbl th{background:#fafbfa;text-align:left;font-size:11.5px;color:var(--muted);font-weight:500;padding:10px 14px;border-bottom:1px solid var(--line);}
+  .tbl td{padding:12px 14px;font-size:12.8px;border-bottom:1px solid #f0f2f1;vertical-align:top;line-height:1.6;}
+  .tbl tr:last-child td{border-bottom:none;}
+  .tbl tr.click{cursor:pointer;}
+  .tbl tr.click:hover td{background:#f5f9f7;}
+  .st{display:inline-block;border-radius:4px;padding:2px 9px;font-size:11px;font-weight:500;white-space:nowrap;}
+  .st.ai{background:var(--green-pale);color:var(--green);}
+  .st.kb{background:#e7efe9;color:#1c5c40;border:1px solid var(--green-line);}
+  .st.wip{background:#f4f1e5;color:#8a7a2e;}
+  .doc-name{font-weight:500;}
+  .doc-name .sm{font-weight:400;color:var(--muted);font-size:11.5px;display:block;margin-top:2px;}
+  .qtext .sm{color:var(--muted);font-size:11.5px;display:block;margin-top:2px;}
+
+  /* ===== モーダル ===== */
+  .ovl{display:none;position:fixed;inset:0;background:rgba(15,30,24,.45);z-index:50;}
+  .ovl.on{display:flex;align-items:flex-start;justify-content:center;padding:40px 24px;}
+  .modal{background:#fff;border-radius:14px;max-width:860px;width:100%;max-height:calc(100vh - 80px);overflow-y:auto;padding:24px 28px;}
+  .modal .mh{display:flex;align-items:flex-start;gap:12px;margin-bottom:14px;}
+  .modal .mh h2{font-size:15.5px;line-height:1.5;flex:1;}
+  .modal .mh button{border:1px solid var(--line);background:#fff;border-radius:7px;padding:4px 12px;font-size:12px;color:var(--muted);flex-shrink:0;}
+  .modal .sec{margin-bottom:16px;}
+  .modal .sec .sl{font-size:11.5px;font-weight:700;color:var(--muted);letter-spacing:.05em;margin-bottom:6px;}
+  .modal .qbox{background:var(--green-pale);border-radius:8px;padding:11px 14px;font-size:13px;line-height:1.75;}
+  .modal .abox{background:#fafbfa;border:1px solid var(--line);border-radius:8px;padding:11px 14px;font-size:12.8px;line-height:1.8;}
+  .modal .kbox{background:#fbfaf4;border:1px solid #e8e2c8;border-radius:8px;padding:11px 14px;font-size:12.8px;line-height:1.8;}
+  .modal .kbox .src{color:var(--muted);font-size:11.5px;margin-top:6px;}
+  .toc{border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:12px;}
+  .toc .ti{padding:9px 14px;font-size:12.5px;border-bottom:1px solid #f0f2f1;display:flex;gap:10px;}
+  .toc .ti:last-child{border-bottom:none;}
+  .toc .ti .no{color:var(--muted);flex-shrink:0;width:60px;}
+  .toc .ti.hl{background:var(--green-pale);font-weight:500;}
+  .excerpt{background:var(--quote);border-left:3px solid var(--green);border-radius:0 8px 8px 0;padding:12px 16px;font-size:12.6px;line-height:1.9;color:#374151;}
+  .excerpt .cap{font-size:11.5px;color:var(--muted);margin-bottom:6px;font-weight:700;}
+
+  /* ===== 回答精度の評価 ===== */
+  .rate{margin-top:12px;border:1px dashed var(--green-line);border-radius:10px;background:#fbfdfc;padding:12px 14px;}
+  .rate .rl2{font-size:12px;font-weight:700;color:var(--green);}
+  .rate .rh{font-weight:400;color:var(--muted);font-size:11.3px;display:block;margin:3px 0 9px;line-height:1.65;}
+  .rbtns{display:flex;gap:8px;flex-wrap:wrap;}
+  .rbtns button{border-radius:7px;padding:7px 14px;font-size:12.3px;border:1px solid var(--line);background:#fff;color:var(--muted);}
+  .rbtns .ok{border-color:var(--green-line);color:var(--green);background:var(--green-pale);font-weight:700;}
+  .rbtns .ok:hover{background:#dcebe3;}
+  .rbtns .hold:hover{background:#f7f5ea;}
+  .rbtns .rej:hover{background:#fdf0ef;}
+  .ratedone{font-size:12.3px;line-height:1.75;color:#374151;}
+  .ratedone.ok b{color:var(--green);} .ratedone.hold b{color:#8a7a2e;} .ratedone.rej b{color:#b91c1c;}
+  .ratedone a{color:var(--green);text-decoration:none;}
+
+  /* ===== ナレッジDB ===== */
+  .st.ok{background:#e3f0e8;color:#0e6b3d;border:1px solid var(--green-line);}
+  .st.pend{background:#f4f1e5;color:#8a7a2e;}
+  .st.rej{background:#fdecec;color:#b91c1c;}
+  .kbsum{display:flex;gap:12px;margin-bottom:12px;}
+  .kcard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 18px;min-width:170px;}
+  .kcard .n{font-size:21px;font-weight:700;} .kcard .l{font-size:11px;color:var(--muted);margin-top:2px;}
+  .kcard.g{border-color:var(--green-line);background:#fbfdfc;} .kcard.g .n{color:var(--green);}
+  .mrow{display:flex;gap:8px;justify-content:flex-end;margin-top:4px;}
+  .mrow button{border-radius:7px;padding:8px 16px;font-size:12.5px;border:1px solid var(--line);background:#fff;color:var(--muted);}
+  .mrow .apv{background:var(--green);border-color:var(--green);color:#fff;font-weight:700;}
+  .mrow .rjt{color:#b91c1c;border-color:#f0d5d3;}
+</style>
+</head>
+<body>
+
+<div class="side">
+  <div class="brand">
+    <div class="t1">企業保険<br>照会回答補助AI</div>
+    <div class="t2">大樹生命　企業保険部（モックアップ）</div>
+  </div>
+  <div class="newq"><button onclick="newChat()">＋ 新しい照会</button></div>
+  <div class="nav">
+    <button id="nav-chat" class="on" onclick="go('chat')">照会回答補助</button>
+    <button id="nav-hist" onclick="go('hist')">照会履歴</button>
+    <button id="nav-kb" onclick="go('kb')">ナレッジDB</button>
+    <button id="nav-docs" onclick="go('docs')">ドキュメント</button>
+  </div>
+  <div class="recent">
+    <div class="rl">最近の照会</div>
+    <button onclick="openHist(0)">フェニックスケアプラスの介護保険金の支払事由</button>
+    <button onclick="openHist(1)">経営サポートの名義変更（法人→個人）</button>
+    <button onclick="openHist(4)">プラチナフェニックスの保険料の損金算入</button>
+  </div>
+  <div class="demo-note">本画面はご提案用モックアップです。契約者名・契約内容・数値はすべて仮想のデモデータであり、実際の商品内容は約款・パンフレットによります。</div>
+  <div class="foot">ログイン中：<b>企業保険部　佐藤</b></div>
+</div>
+
+<div class="main">
+  <div class="phead">
+    <h1 id="ptitle">照会回答補助</h1>
+    <span class="sub" id="psub">自然文で質問すると、登録ドキュメントとナレッジを参照して回答します</span>
+    <span class="right">2026/07/03（金）</span>
+  </div>
+  <div class="content" id="scroller">
+
+    <!-- ==== 照会回答補助 ==== -->
+    <div class="page on" id="page-chat">
+      <div class="finder">
+        <div class="lbl">契約者・商品から探す（名称をクリックすると送信し、AIが該当契約・よくある照会を聞き返します。「入力欄へ」で名称を入力欄にコピーできます）</div>
+        <input id="finder-q" placeholder="契約者名・商品名で検索" oninput="filterFinder()">
+        <div class="fgroup"><span class="gl">契約者</span><span id="fg-org"></span></div>
+        <div class="fgroup"><span class="gl">商品</span><span id="fg-prod"></span></div>
+      </div>
+      <div class="chatwrap"><div id="thread"></div></div>
+      <div class="inputbar">
+        <div class="ibox">
+          <input id="qinput" placeholder="例：山田製作所の経営サポート、社長勇退に伴う名義変更の手続きを教えて" onkeydown="if(event.key==='Enter')askFree()">
+          <button onclick="askFree()">質問する</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==== 照会履歴 ==== -->
+    <div class="page" id="page-hist">
+      <div class="toolrow">
+        <span class="fchip on">すべて</span><span class="fchip">AI回答で解決</span><span class="fchip">担当者回答登録済</span><span class="fchip">確認中</span>
+        <span class="sp">2026年6月〜7月　全24件中 7件を表示</span>
+      </div>
+      <div class="pgnote">質問は入力された自然文のまま自動で記録され、AIが契約者・商品・照会区分をタグ付けします。担当者に電話・メールで確認した回答を登録すると、履歴に紐づいてナレッジ化（KB番号付与）され、次回以降はAIがその回答を参照します。行をクリックすると詳細を表示します。</div>
+      <table class="tbl" id="histTbl"></table>
+    </div>
+
+    <!-- ==== ナレッジDB ==== -->
+    <div class="page" id="page-kb">
+      <div class="kbsum">
+        <div class="kcard g"><div class="n" id="kbn-ok">0</div><div class="l">承認済（自動応対可）</div></div>
+        <div class="kcard"><div class="n" id="kbn-pend">0</div><div class="l">未承認（検証中）</div></div>
+        <div class="kcard"><div class="n" id="kbn-rej">0</div><div class="l">差戻し（再確認）</div></div>
+      </div>
+      <div class="toolrow">
+        <span class="fchip on" id="kbf-all" onclick="kbFilter('all')">すべて</span>
+        <span class="fchip" id="kbf-ok" onclick="kbFilter('ok')">承認済</span>
+        <span class="fchip" id="kbf-pend" onclick="kbFilter('pend')">未承認</span>
+        <span class="fchip" id="kbf-rej" onclick="kbFilter('rej')">差戻し</span>
+        <span class="sp">PoC対象範囲のナレッジを表示</span>
+      </div>
+      <div class="pgnote">担当者回答の登録と、AI回答への精度評価が自動で蓄積されるナレッジの一覧です。<b>「承認済（自動応対可）」のナレッジのみ</b>が、将来の応対自動化（DynaAI）導入時にAIが自動回答してよい範囲となります。未承認・差戻しのナレッジは、担当者確認を前提とした回答補助でのみ利用されます。行をクリックすると詳細と承認操作を表示します。</div>
+      <table class="tbl" id="kbTbl"></table>
+    </div>
+
+    <!-- ==== ドキュメント ==== -->
+    <div class="page" id="page-docs">
+      <div class="toolrow">
+        <span class="fchip on">すべて</span><span class="fchip">パンフレット</span><span class="fchip">約款・しおり</span><span class="fchip">マニュアル</span><span class="fchip">照会ナレッジ</span>
+        <span class="sp">登録ドキュメント 8件（PoC対象範囲）</span>
+      </div>
+      <div class="pgnote">AIが回答時に参照するドキュメントの一覧です。行をクリックすると目次と内容を確認できます。改定時は再取込みにより最新版が参照され、旧版は参照対象から除外されます。</div>
+      <table class="tbl" id="docTbl"></table>
+    </div>
+
+  </div>
+</div>
+
+<div class="ovl" id="ovl" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modalBody"></div>
+</div>
+
+<script>
+/* =============== マスタ（契約者・商品） =============== */
+const PRODS = {
+ keiei:{name:"経営サポート", formal:"逓増定期保険（有配当2012）", ins:"日本生命保険相互会社",
+   faq:[["名義変更（法人→個人）の手続き",0],["契約者貸付の限度額・利息",2]]},
+ platinum:{name:"プラチナフェニックス", formal:"傷害保障重点期間設定型長期定期保険（有配当2017）", ins:"日本生命保険相互会社",
+   faq:[["傷害保障重点期間中に疾病で死亡した場合の支払額",1]]},
+ careplus:{name:"フェニックスケアプラス", formal:"傷害死亡重点期間設定型介護保障保険（有配当2025）", ins:"日本生命保険相互会社",
+   faq:[["介護保険金の支払事由（要介護2の取扱い）",3]]}
+};
+const ORGS = {
+ yamada:{name:"株式会社山田製作所",
+   contracts:[{p:"keiei", no:"K-2018-04512", note:"被保険者：代表取締役／契約日 2018/10/1"}]},
+ sato:{name:"佐藤運輸株式会社",
+   contracts:[{p:"platinum", no:"K-2020-07831", note:"傷害保障重点期間：20年（〜2040/9）／死亡保険金額 1億円"},
+              {p:"keiei", no:"K-2016-02244", note:"被保険者：専務取締役／契約日 2016/4/1"}]},
+ suzuki:{name:"鈴木商事株式会社",
+   contracts:[{p:"careplus", no:"K-2025-01204", note:"契約日 2025/12/1"}]}
+};
+/* 選択チップ→送信される質問文の組み立て */
+const BUILD_Q = {
+ 0:(o)=>`${o}の経営サポート、契約を法人から個人に名義変更する場合の手続きと必要書類を教えてください。`,
+ 1:(o)=>`${o}のプラチナフェニックス、傷害保障重点期間中に病気で亡くなった場合は何が支払われますか？`,
+ 2:(o)=>`${o}の経営サポートで契約者貸付は使えますか？限度額と利息も教えてください。`,
+ 3:(o)=>`${o}のフェニックスケアプラス、介護保険金はどういう状態になったら支払われますか？要介護2でも出ますか？`
+};
+
+/* =============== Q&Aデータ =============== */
+const QA = [
+ { q:"山田製作所の経営サポート、社長が来期勇退予定です。契約を法人から個人に名義変更する場合の手続きと必要書類を教えてください。",
+   tags:["株式会社山田製作所","経営サポート","名義変更"],
+   formal:"経営サポート［正式名称：逓増定期保険（有配当2012）／引受保険会社：日本生命保険相互会社］",
+   ans:`<p>ご契約（証券番号 K-2018-04512／契約者：株式会社山田製作所、被保険者：代表取締役）の<span class="em">契約者変更（法人→個人）は可能</span>です。手続きは以下のとおりです。</p>
+        <ol><li>契約者変更請求書（様式H-11）にご記入・ご捺印（法人届出印および新契約者の印）</li>
+        <li>法人側の意思決定を確認できる書類（取締役会議事録の写し等）をご用意</li>
+        <li>新契約者さまの本人確認書類、保険証券を添付のうえご提出</li></ol>
+        <p><span class="em">留意点：</span>変更時の契約の評価額（解約返戻金相当額等）の取扱いは法人・個人双方の税務に関わるため、<span class="em">顧問税理士等への確認をご案内ください</span>。変更後は個人契約として継続します。</p>`,
+   refs:[
+    ["法人保険 事務取扱マニュアル","5.1 契約者変更（法人→個人）p.62-65",
+     "「法人契約の契約者を役員個人に変更する場合は、契約者変更請求書（様式H-11）のほか、法人の意思決定を確認できる書類（取締役会議事録の写し等）を徴求する。変更時点の解約返戻金相当額を新旧契約者に通知する。」",false],
+    ["経営サポート ご契約のしおり・約款","第14条（契約者の変更）",
+     "「保険契約者は、被保険者および当会社の同意を得て、保険契約上の一切の権利義務を第三者に承継させることができます。」",false]],
+   rel:{t:"関連する過去照会：2026/05/28「名義変更後の保険料払込方法」（担当者回答登録済　KB-0108）", h:5} },
+
+ { q:"佐藤運輸のプラチナフェニックス、傷害保障重点期間中に病気で亡くなった場合は何が支払われますか？",
+   tags:["佐藤運輸株式会社","プラチナフェニックス","保険金支払"],
+   formal:"プラチナフェニックス［正式名称：傷害保障重点期間設定型長期定期保険（有配当2017）／引受保険会社：日本生命保険相互会社］",
+   ans:`<p>本商品は、保険期間のうち<span class="em">傷害保障重点期間</span>を設定する長期定期保険です。当該契約（証券番号 K-2020-07831）の重点期間（第1保険期間）は<span class="em">20年（〜2040/9）</span>と登録されています。</p>
+        <ul><li><span class="em">重点期間中の災害死亡：</span>死亡保険金額（1億円）をお支払い</li>
+        <li><span class="em">重点期間中の疾病死亡：</span>死亡保険金額と同額ではなく、<span class="em">責任準備金額（契約後の経過期間等に応じて算出される金額）</span>のお支払いとなります</li>
+        <li><span class="em">重点期間経過後：</span>死因を問わず死亡保険金額をお支払い</li></ul>
+        <p>個別のお支払額は契約日・払込状況により異なるため、ご案内の際は契約内容照会（設計書・現価表）の確認をあわせてご案内ください。</p>`,
+   refs:[
+    ["プラチナフェニックス ご契約のしおり・約款","第3条（死亡保険金の支払）",
+     "「傷害保障重点期間中に被保険者が不慮の事故以外の原因により死亡したときは、死亡保険金額にかかわらず、責任準備金額を支払います。」",false],
+    ["プラチナフェニックス 商品パンフレット","「傷害保障重点期間のしくみ」p.4",
+     "「傷害保障重点期間中は、保障を災害死亡に重点化することで保険料を抑え、長期の保障と退職慰労金等の財源準備の両立を図ります。」",false]],
+   rel:{t:"関連する過去照会：2026/07/01「重点期間中の病死の支払額は？」（AI回答で解決）", h:2} },
+
+ { q:"経営サポートで契約者貸付は使えますか？限度額と利息も教えてください。",
+   tags:["経営サポート","契約者貸付"],
+   formal:"経営サポート［正式名称：逓増定期保険（有配当2012）／引受保険会社：日本生命保険相互会社］",
+   ans:`<p>ご利用いただけます。本商品は解約返戻金があるため、<span class="em">解約返戻金の所定範囲内で契約者貸付</span>が可能です。</p>
+        <ul><li><span class="em">貸付限度額：</span>その時点の解約返戻金額に所定の貸付率を乗じた金額（貸付率は契約日・商品により異なります）</li>
+        <li><span class="em">利息：</span>所定の貸付利率による複利計算（利率は契約日により異なるため、個別契約の利率をご確認ください）</li>
+        <li><span class="em">手続き：</span>契約者（法人）からの契約者貸付請求書（様式L-03）＋法人届出印。お支払いは法人名義口座への振込</li></ul>
+        <p><span class="em">留意点：</span>貸付元利金が解約返戻金額を超える場合、ご契約が失効することがあります。</p>`,
+   refs:[
+    ["法人保険 事務取扱マニュアル","6.3 契約者貸付 p.88-91",
+     "「契約者貸付の限度額は、請求日現在の解約返戻金額に所定の貸付率を乗じた金額とする。貸付利率は契約日に応じて定まる利率を適用し、複利で計算する。」",false],
+    ["経営サポート ご契約のしおり・約款","第11条（契約者に対する貸付）",
+     "「保険契約者は、解約返戻金額の当会社の定める範囲内で、当会社から貸付を受けることができます。」",false]],
+   rel:{t:"関連する過去照会：2026/06/28「解約返戻金のピークはいつ頃？」（AI回答で解決）", h:3} },
+
+ /* 3: 回答不可 → 担当者確認（参照ドキュメントなし） */
+ { q:"鈴木商事のフェニックスケアプラス、介護保険金はどういう状態になったら支払われますか？要介護2でも出ますか？",
+   tags:["鈴木商事株式会社","フェニックスケアプラス","保険金支払"],
+   formal:"フェニックスケアプラス［正式名称：傷害死亡重点期間設定型介護保障保険（有配当2025）／引受保険会社：日本生命保険相互会社］",
+   lowconf:true,
+   ans:`<p>恐れ入ります。ご質問の<span class="em">介護保険金の支払事由（特に公的介護保険の要介護2に該当した場合の取扱い）</span>について、登録ドキュメント・ナレッジの中から回答の根拠となる記載を特定できませんでした。</p>`,
+   lowconfMsg:"2025年発売の新商品のため、ナレッジの蓄積が少ない状態です。誤案内防止のため、この照会には回答を提示しません。担当者へ電話・メールでご確認のうえ、確認できた回答を下の「担当者回答を登録」から登録してください。次回以降はAIがその回答を根拠として提示します。",
+   refs:[], rel:null, confirm:true },
+
+ /* 4: フォールバック */
+ { q:null,
+   tags:["対象を特定できませんでした"],
+   formal:null,
+   ans:`<p>ご質問の内容から対象の契約者・商品を特定できませんでした。恐れ入りますが、<span class="em">契約者名（例：山田製作所）や商品名（例：経営サポート）</span>を含めてもう一度ご質問ください。上部の「契約者・商品から探す」もご利用いただけます。</p>
+        <p>登録ドキュメントに記載のないご質問には回答を提示しません。その場合は担当者へ電話・メールでご確認のうえ、確認できた回答を「担当者回答を登録」から登録してください。次回以降はAIがその回答を参照して回答できるようになります。</p>`,
+   refs:[], rel:null, confirm:true }
+];
+
+const PASTE_SAMPLE = `商品部 高橋さんに電話で確認（7/3 15:20）。
+フェニックスケアプラスの介護保険金は、①公的介護保険制度に定める要介護2以上に該当していると認定されたとき、または②会社所定の要介護状態が180日以上継続したと医師により診断確定されたとき、のいずれかで支払対象（要介護2でも①に該当すれば支払対象）。お支払額は傷害死亡重点期間（第1保険期間）中は責任準備金額、経過後（第2保険期間）は保険金額。
+出典：商品部「フェニックスケアプラス 取扱要領」3.2（2025年11月版）`;
+
+/* =============== 照会履歴 =============== */
+const HIST = [
+ {d:"07/03 16:02", q:"鈴木商事のフェニックスケアプラス、介護保険金はどういう状態になったら支払われますか？要介護2でも出ますか？",
+  org:"鈴木商事株式会社", prod:"フェニックスケアプラス", kind:"保険金支払", from:"CC", st:"kb", stt:"担当者回答登録済", kb:"KB-0131",
+  ai:"登録ドキュメント・ナレッジから回答の根拠を特定できず、回答を提示しなかった（担当者への確認を案内）。",
+  refs:[],
+  human:{by:"企業保険部 佐藤（商品部 高橋へ電話確認）", at:"2026/07/03 15:20",
+    body:"介護保険金は、①公的介護保険制度に定める要介護2以上に該当していると認定されたとき、または②会社所定の要介護状態が180日以上継続したと医師により診断確定されたとき、のいずれかで支払対象（要介護2でも①に該当すれば支払対象）。お支払額は傷害死亡重点期間（第1保険期間）中は責任準備金額、経過後（第2保険期間）は保険金額。",
+    src:"商品部「フェニックスケアプラス 取扱要領」3.2（2025年11月版）"}},
+ {d:"07/03 10:12", q:"山田製作所の経営サポート、社長が来期勇退予定です。契約を法人から個人に名義変更する場合の手続きと必要書類を教えてください。",
+  org:"株式会社山田製作所", prod:"経営サポート", kind:"名義変更", from:"営業職員", st:"ai", stt:"AI回答で解決", kb:null,
+  ai:"契約者変更請求書（様式H-11）＋取締役会議事録の写し等＋本人確認書類・保険証券。評価額の税務取扱いは顧問税理士への確認を案内。",
+  refs:["法人保険 事務取扱マニュアル 5.1","経営サポート 約款 第14条"], human:null},
+ {d:"07/01 14:37", q:"佐藤運輸のプラチナフェニックス、傷害保障重点期間中に病気で亡くなった場合は何が支払われますか？",
+  org:"佐藤運輸株式会社", prod:"プラチナフェニックス", kind:"保険金支払", from:"営業職員", st:"ai", stt:"AI回答で解決", kb:null,
+  ai:"重点期間中の疾病死亡は死亡保険金額ではなく責任準備金額。重点期間経過後は死因を問わず死亡保険金額。",
+  refs:["プラチナフェニックス 約款 第3条","商品パンフレット p.4"], human:null},
+ {d:"06/28 11:05", q:"経営サポートの解約返戻金のピークはいつ頃になりますか？契約ごとに違いますか？",
+  org:"─（商品全般）", prod:"経営サポート", kind:"解約・返戻金", from:"営業職員", st:"ai", stt:"AI回答で解決", kb:null,
+  ai:"返戻金の推移・ピークは契約年齢・保険期間等の設計により契約ごとに異なる。個別契約は設計書・現価表の確認を案内。",
+  refs:["経営サポート 商品パンフレット p.4","法人保険 事務取扱マニュアル 7.2"], human:null},
+ {d:"06/25 09:40", q:"プラチナフェニックスの保険料は全額損金にできますか？お客さまの経理担当から聞かれています。",
+  org:"佐藤運輸株式会社", prod:"プラチナフェニックス", kind:"経理処理・税務", from:"営業職員", st:"kb", stt:"担当者回答登録済", kb:"KB-0124",
+  ai:"当該契約の最高解約返戻率の区分が登録ドキュメントから特定できず、回答を提示しなかった（担当者への確認を案内）。",
+  refs:[],
+  human:{by:"企業保険部 田中（引受会社 法人サービス部へメール確認）", at:"2026/06/25 17:05",
+    body:"当該契約の最高解約返戻率は70％超85％以下の区分に該当し、保険期間開始から前半4割の期間は支払保険料×60％を資産計上、残額を損金算入。全額損金にはならない。最終的な経理処理は契約者の顧問税理士の判断による旨を必ず添えること。",
+    src:"引受会社回答メール（2026/06/25受信）／国税庁 法人税基本通達9-3-5の2"}},
+ {d:"06/20 15:18", q:"経営サポートを払済保険に変更した場合、保険金額の逓増は続きますか？",
+  org:"株式会社山田製作所", prod:"経営サポート", kind:"契約変更", from:"CC", st:"wip", stt:"担当者確認中", kb:null,
+  ai:"払済変更後の逓増の取扱いについて登録ドキュメントから根拠を特定できず、回答を提示しなかった。担当者へ確認中（2026/06/20 15:24 確認開始を記録）。",
+  refs:[], human:null},
+ {d:"06/17 13:44", q:"フェニックスケアプラスとプラチナフェニックスの違いを教えてください。お客さまへの提案で使い分けたいです。",
+  org:"─（商品全般）", prod:"商品比較", kind:"商品内容", from:"営業職員", st:"ai", stt:"AI回答で解決", kb:null,
+  ai:"どちらも重点期間を設定して保険料を抑える長期商品。プラチナフェニックス（傷害保障重点期間設定型長期定期保険）は死亡保障中心、フェニックスケアプラス（傷害死亡重点期間設定型介護保障保険・2025年発売）は要介護状態への保障を追加。",
+  refs:["各商品パンフレット"], human:null},
+];
+
+/* =============== ドキュメント =============== */
+const DOCS = [
+ {name:"経営サポート 商品パンフレット", sub:"逓増定期保険（有配当2012）※引受保険会社：日本生命保険相互会社", kind:"パンフレット", prod:"経営サポート", ver:"2025年度版",
+  toc:[["p.2","商品のしくみ（保険金額の逓増イメージ）"],["p.4","解約返戻金の推移と活用（勇退退職金の財源準備）"],["p.6","配当のしくみ（有配当）"],["p.8","ご契約にあたっての留意事項"]],
+  hl:1, ex:["p.4 解約返戻金の推移と活用",
+  "解約返戻金は契約後一定期間経過後に増加し、設計により所定の時期にピークを迎えます。勇退時期にあわせた設計により、役員退職慰労金の財源としてご活用いただけます。解約返戻金額は契約年齢・保険期間・保険金額等により異なりますので、個別の推移は設計書（現価表）にてご確認ください。"]},
+ {name:"経営サポート ご契約のしおり・約款", sub:"逓増定期保険（有配当2012）", kind:"約款・しおり", prod:"経営サポート", ver:"2025年度版",
+  toc:[["第3条","死亡保険金の支払"],["第7条","保険金額の逓増"],["第11条","契約者に対する貸付"],["第14条","契約者の変更"],["第16条","払済保険への変更"]],
+  hl:3, ex:["第14条（契約者の変更）",
+  "保険契約者は、被保険者および当会社の同意を得て、保険契約上の一切の権利義務を第三者に承継させることができます。この場合、承継後の保険契約者がこの約款上の権利義務を有します。"]},
+ {name:"プラチナフェニックス 商品パンフレット", sub:"傷害保障重点期間設定型長期定期保険（有配当2017）※引受保険会社：日本生命保険相互会社", kind:"パンフレット", prod:"プラチナフェニックス", ver:"2025年度版",
+  toc:[["p.2","商品のしくみ"],["p.4","傷害保障重点期間のしくみ"],["p.6","解約返戻金の推移"],["p.8","ご契約例"]],
+  hl:1, ex:["p.4 傷害保障重点期間のしくみ",
+  "傷害保障重点期間中は、保障を災害死亡に重点化することで保険料を抑え、長期の保障と退職慰労金等の財源準備の両立を図ります。重点期間中に不慮の事故以外の原因で死亡された場合のお支払額は、死亡保険金額とは異なります（約款第3条参照）。"]},
+ {name:"プラチナフェニックス ご契約のしおり・約款", sub:"傷害保障重点期間設定型長期定期保険（有配当2017）", kind:"約款・しおり", prod:"プラチナフェニックス", ver:"2025年度版",
+  toc:[["第2条","傷害保障重点期間"],["第3条","死亡保険金の支払"],["第9条","契約者に対する貸付"],["第13条","契約者の変更"]],
+  hl:1, ex:["第3条（死亡保険金の支払）",
+  "傷害保障重点期間中に被保険者が不慮の事故以外の原因により死亡したときは、死亡保険金額にかかわらず、責任準備金額を支払います。傷害保障重点期間経過後に死亡したときは、死因にかかわらず死亡保険金額を支払います。"]},
+ {name:"フェニックスケアプラス 商品パンフレット", sub:"傷害死亡重点期間設定型介護保障保険（有配当2025）※引受保険会社：日本生命保険相互会社／2025年発売", kind:"パンフレット", prod:"フェニックスケアプラス", ver:"2025年11月版",
+  toc:[["p.2","商品のしくみ"],["p.3","保障内容（介護保険金・死亡保障）"],["p.5","傷害死亡重点期間のしくみ"],["p.7","ご契約にあたっての留意事項"]],
+  hl:1, ex:["p.3 保障内容",
+  "被保険者が約款所定の要介護状態に該当したとき、介護保険金をお支払いします。傷害死亡重点期間中の死亡保障とあわせ、退職慰労金等の財源準備にご活用いただけます。※要介護状態の詳細な該当基準は「ご契約のしおり・約款」をご確認ください。"]},
+ {name:"法人保険 事務取扱マニュアル", sub:"契約者変更・契約者貸付・払済変更・解約・失効復活 等の標準手続き", kind:"マニュアル", prod:"法人向け商品共通", ver:"第4.1版（2026/04）",
+  toc:[["5.1","契約者変更（法人→個人）"],["5.2","契約者変更（法人→法人）"],["6.3","契約者貸付"],["7.2","解約・解約返戻金の案内"],["7.5","払済保険への変更"]],
+  hl:0, ex:["5.1 契約者変更（法人→個人）p.62-65",
+  "法人契約の契約者を役員個人に変更する場合は、契約者変更請求書（様式H-11）のほか、法人の意思決定を確認できる書類（取締役会議事録の写し等）を徴求する。変更時点の解約返戻金相当額を新旧契約者に通知する。税務上の取扱いに関する照会には、顧問税理士等への確認を案内し、当社からの断定的な回答は行わない。"]},
+ {name:"保険料の経理処理に関するご案内", sub:"法人契約の保険料の税務取扱い（2019年法人税基本通達改正対応）", kind:"マニュアル", prod:"法人向け商品共通", ver:"2025年度版",
+  toc:[["1","定期保険等の保険料の取扱いの概要"],["2","最高解約返戻率による区分"],["3","資産計上期間と取崩し"],["4","照会対応上の留意点"]],
+  hl:1, ex:["2 最高解約返戻率による区分",
+  "保険期間3年以上の定期保険等は、最高解約返戻率に応じて資産計上割合が異なります（例：70％超85％以下の場合、保険期間の当初4割の期間は支払保険料×60％を資産計上）。※個別契約の経理処理は、契約者の顧問税理士・所轄税務署の判断によります。照会対応では必ずその旨を添えてください。"]},
+ {name:"照会対応ナレッジ集", sub:"担当者回答の蓄積（KB-0001〜0131）。担当者回答の登録により自動で追加", kind:"照会ナレッジ", prod:"法人向け商品共通", ver:"随時更新",
+  toc:[["KB-0131","フェニックスケアプラス 介護保険金の支払事由（要介護2の取扱い）"],["KB-0124","プラチナフェニックス 保険料の損金算入（最高解約返戻率70％超85％以下）"],["KB-0108","経営サポート 名義変更後の保険料払込方法"],["KB-0097","経営サポート 逓増開始前の減額の可否"]],
+  hl:0, ex:["KB-0131（2026/07/03 登録：企業保険部 佐藤）",
+  "フェニックスケアプラスの介護保険金は、①公的介護保険制度に定める要介護2以上に該当していると認定されたとき、または②会社所定の要介護状態が180日以上継続したと医師により診断確定されたとき、のいずれかで支払対象（要介護2でも①に該当すれば支払対象）。お支払額は傷害死亡重点期間（第1保険期間）中は責任準備金額、経過後（第2保険期間）は保険金額。出典：商品部「フェニックスケアプラス 取扱要領」3.2（2025年11月版）"]},
+];
+
+/* =============== 検索・選択パネル =============== */
+function esc(t){return t.replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+function renderFinder(filter=""){
+  const f=filter.trim();
+  const orgs=Object.entries(ORGS).filter(([k,o])=>!f||o.name.includes(f));
+  const prods=Object.entries(PRODS).filter(([k,p])=>!f||p.name.includes(f)||p.formal.includes(f));
+  document.getElementById("fg-org").innerHTML = orgs.map(([k,o])=>
+    `<span class="fitem"><button class="nm" onclick="pickOrg('${k}')">${o.name}</button><button class="cp" onclick="copyTo('${o.name}')" title="入力欄へコピー">入力欄へ</button></span>`).join(" ")||'<span style="font-size:11.5px;color:var(--muted)">該当なし</span>';
+  document.getElementById("fg-prod").innerHTML = prods.map(([k,p])=>
+    `<span class="fitem"><button class="nm" onclick="pickProd('${k}')">${p.name}</button><button class="cp" onclick="copyTo('${p.name}')" title="入力欄へコピー">入力欄へ</button></span>`).join(" ")||'<span style="font-size:11.5px;color:var(--muted)">該当なし</span>';
+}
+function filterFinder(){ renderFinder(document.getElementById("finder-q").value); }
+function copyTo(t){
+  const inp=document.getElementById("qinput");
+  inp.value = inp.value ? (inp.value.replace(/\s*$/,"")+" "+t) : t;
+  inp.focus();
+}
+
+/* =============== チャット =============== */
+const thread = document.getElementById("thread");
+const scroller = document.getElementById("scroller");
+let busy=false, seq=0;
+
+function bubbleQ(t){ thread.insertAdjacentHTML("beforeend",`<div class="msg-q"><div class="b">${esc(t)}</div></div>`); }
+function cardA(html){
+  const id=++seq;
+  thread.insertAdjacentHTML("beforeend",
+   `<div class="msg-a" id="wait${id}"><div class="av">AI</div><div class="acard"><div class="thinking"><span></span><span></span><span></span></div></div></div>`);
+  scroller.scrollTop=scroller.scrollHeight;
+  setTimeout(()=>{
+    document.getElementById("wait"+id).outerHTML =
+     `<div class="msg-a"><div class="av">AI</div><div class="acard">${html.replace(/__ID__/g,id)}</div></div>`;
+    scroller.scrollTop=scroller.scrollHeight; busy=false;
+  },900);
+  return id;
+}
+
+/* 契約者を選択 → 契約一覧を聞き返す */
+function pickOrg(k){
+  if(busy) return; busy=true;
+  const o=ORGS[k];
+  bubbleQ(o.name);
+  const rows=o.contracts.map(c=>{
+    const p=PRODS[c.p];
+    return `<li><span class="em">${p.name}</span>（${p.formal}）　証券番号 ${c.no}<br><span style="color:var(--muted);font-size:12px">${c.note}</span></li>`;}).join("");
+  const chips=o.contracts.flatMap(c=>PRODS[c.p].faq.map(([label,qi])=>
+    `<button onclick="askBuilt(${qi},'${o.name}')">${PRODS[c.p].name}：${label}</button>`)).join("");
+  cardA(`<div class="tags"><span class="tag">${o.name}</span><span class="tag">ご契約 ${o.contracts.length}件</span></div>
+    <div class="ans"><p>${o.name}さまですね。ご契約中の商品は以下のとおりです。<span class="em">どの商品・お手続きに関するお問い合わせですか？</span></p><ul>${rows}</ul></div>
+    <div class="cchips">${chips}</div>
+    <div class="rel">そのまま入力欄にご質問を入力いただくこともできます。</div>`);
+}
+/* 商品を選択 → よくある照会を聞き返す */
+function pickProd(k){
+  if(busy) return; busy=true;
+  const p=PRODS[k];
+  bubbleQ(p.name);
+  const chips=p.faq.map(([label,qi])=>`<button onclick="askBuilt(${qi},null)">${label}</button>`).join("");
+  cardA(`<div class="tags"><span class="tag">${p.name}</span></div>
+    <div class="formal">正式名称：${p.formal}　／　引受保険会社：${p.ins}</div>
+    <div class="ans"><p>${p.name}に関するお問い合わせですね。<span class="em">どのような内容ですか？</span>よくあるお問い合わせは以下のとおりです。</p></div>
+    <div class="cchips">${chips}</div>
+    <div class="rel">契約者名を含めてご質問いただくと、当該契約の内容を踏まえて回答します。</div>`);
+}
+function askBuilt(qi, orgName){
+  if(busy) return;
+  const o = orgName || {0:"山田製作所",1:"佐藤運輸",2:"佐藤運輸",3:"鈴木商事"}[qi];
+  busy=true; renderQA(qi, BUILD_Q[qi](o));
+}
+
+/* Q&A描画 */
+function renderQA(i, qtext){
+  bubbleQ(qtext);
+  const d=QA[i];
+  const tags=d.tags.map(t=>`<span class="tag">${t}</span>`).join("")+(d.lowconf?'<span class="tag warn">回答根拠なし（要確認）</span>':'');
+  const formal=d.formal?`<div class="formal">${d.formal}</div>`:"";
+  const low=d.lowconfMsg?`<div class="lowconf">${d.lowconfMsg}</div>`:"";
+  const refs=d.refs.length?`<div class="refs"><div class="rlbl">参照ドキュメント（${d.refs.length}件）</div>`+
+    d.refs.map(r=>`<div class="ref${r[3]?' kb':''}"><div class="rt">${r[0]}<span class="pg">${r[1]}</span></div><div class="rq">${r[2]}</div><a href="javascript:void(0)" onclick="go('docs')">ドキュメントを開く →</a></div>`).join("")+`</div>`:"";
+  const rel=d.rel?`<div class="rel">${d.rel.t}　<a onclick="openHist(${d.rel.h})">詳細を見る</a></div>`:"";
+  const note=d.refs.length?`<div class="note">本回答はAIが登録ドキュメント・ナレッジをもとに生成したものです。お客さま・営業職員へのご案内前に、参照ドキュメントの原本をご確認ください。</div>`:"";
+  const btns=`<button onclick="this.textContent='解決として記録しました';this.disabled=true">この回答で解決</button>
+     <button class="${d.confirm?'pri':''}" onclick="openConfirm(__ID__,${i})">担当者回答を登録</button>`;
+  const rate=d.refs.length?`<div class="rate" id="rate__ID__">
+     <div class="rl2">回答精度の評価（自動応対への利用可否）</div>
+     <span class="rh">この回答を「そのまま自動応対に利用してよいか」を評価します。評価はナレッジDBに記録され、<b>承認済の回答のみ</b>が将来の応対自動化（DynaAI）でAIが自動回答してよい範囲となります。</span>
+     <div class="rbtns">
+       <button class="ok" onclick="setRate(__ID__,'ok')">承認（自動応対可）</button>
+       <button class="hold" onclick="setRate(__ID__,'hold')">保留（人の確認を継続）</button>
+       <button class="rej" onclick="setRate(__ID__,'rej')">差戻し（誤りあり）</button>
+     </div></div>`:"";
+  cardA(`<div class="tags">${tags}</div>${formal}<div class="ans">${d.ans}</div>${low}${refs}${note}
+    <div class="acts" id="acts__ID__">${btns}</div>${rate}${rel}<div id="cf__ID__"></div>`);
+}
+function askFree(){
+  if(busy) return;
+  const inp=document.getElementById("qinput");
+  const t=inp.value.trim(); if(!t) return;
+  inp.value="";
+  let i=4;
+  if(t.includes("名義")||t.includes("契約者変更")) i=0;
+  else if(t.includes("重点")||t.includes("病気")||t.includes("プラチナ")) i=1;
+  else if(t.includes("貸付")) i=2;
+  else if(t.includes("介護")||t.includes("ケアプラス")) i=3;
+  else if(/^(株式会社)?山田製作所$/.test(t)) return (busy=false, pickOrg('yamada'));
+  else if(/^佐藤運輸(株式会社)?$/.test(t)) return (busy=false, pickOrg('sato'));
+  else if(/^鈴木商事(株式会社)?$/.test(t)) return (busy=false, pickOrg('suzuki'));
+  else if(t==="経営サポート") return (busy=false, pickProd('keiei'));
+  else if(t==="プラチナフェニックス") return (busy=false, pickProd('platinum'));
+  else if(t==="フェニックスケアプラス") return (busy=false, pickProd('careplus'));
+  busy=true; renderQA(i, t);
+}
+function newChat(){
+  go('chat');
+  thread.innerHTML="";
+  document.getElementById("qinput").value="";
+  busy=false;
+}
+
+/* ===== 担当者回答の登録 ===== */
+function openConfirm(id, qi){
+  const box=document.getElementById("cf"+id);
+  if(box.innerHTML){ box.innerHTML=""; return; }
+  const sample=(qi===3)?esc(PASTE_SAMPLE):"";
+  box.innerHTML=`
+   <div class="confirm">
+     <h4>担当者に確認した回答の登録</h4>
+     <div class="steps"><b>担当者への確認は、本ツールではなく電話・メールで行ってください。</b><br>
+     ① 担当者へ電話・メールで確認 → ② 確認できた回答を下欄に貼り付け → ③ 登録すると、この照会に紐づいてナレッジに追加され、次回以降はAIがこの回答を根拠として提示します。</div>
+     <label>確認先・確認方法（任意）</label>
+     <input type="text" value="${qi===3?'商品部 高橋（電話・7/3 15:20）':''}" placeholder="例：商品部 ○○さん（メール／電話）">
+     <label>確認できた回答（メール本文や電話メモを貼り付け）<span style="color:#b91c1c">＊</span></label>
+     <textarea id="pt${id}" placeholder="担当者から確認できた回答内容を貼り付けてください。出典（回覧・要領・回答メール等）もあわせて記載すると、AIの回答時に出典として提示されます。">${sample}</textarea>
+     <div class="row">
+       <button onclick="document.getElementById('cf${id}').innerHTML=''">キャンセル</button>
+       <button class="reg" onclick="registerKB(${id})">回答として登録（ナレッジに追加）</button>
+     </div>
+   </div>`;
+  scroller.scrollTop=scroller.scrollHeight;
+}
+function registerKB(id){
+  const v=document.getElementById("pt"+id).value.trim();
+  if(!v){ alert("確認できた回答を貼り付けてください。"); return; }
+  document.getElementById("cf"+id).innerHTML=`
+   <div class="kbdone">
+     <b>担当者回答を登録しました</b>　<span class="kbtag">KB-0131</span>　<span class="st pend">未承認（検証中）</span><br>
+     ・この照会の履歴に担当者回答が紐づきました（<a href="javascript:void(0)" onclick="go('hist')" style="color:var(--green)">照会履歴で確認</a>）<br>
+     ・照会対応ナレッジに追加され、<b>次回以降の同様の質問にはAIがこの回答を出典付きで提示します</b>（担当者確認を前提とした回答補助での利用）<br>
+     ・承認者が内容を確認し<b>「承認済（自動応対可）」</b>にすると、将来の応対自動化（DynaAI）で自動回答してよい範囲に含まれます（<a href="javascript:void(0)" onclick="go('kb')" style="color:var(--green)">ナレッジDBで確認</a>）
+   </div>`;
+  const acts=document.getElementById("acts"+id);
+  if(acts) acts.querySelectorAll("button").forEach(b=>b.disabled=true);
+  scroller.scrollTop=scroller.scrollHeight;
+}
+
+/* =============== 照会履歴・ドキュメント =============== */
+function renderHist(){
+  const rows=HIST.map((h,i)=>`
+    <tr class="click" onclick="openHist(${i})">
+      <td style="width:96px;white-space:nowrap">${h.d}</td>
+      <td class="qtext">${esc(h.q)}<span class="sm">${h.org}｜${h.prod}｜${h.kind}</span></td>
+      <td style="width:92px">${h.from}</td>
+      <td style="width:150px"><span class="st ${h.st}">${h.stt}</span>${h.kb?` <span class="st kb">${h.kb}</span>`:""}</td>
+    </tr>`).join("");
+  document.getElementById("histTbl").innerHTML=
+    `<tr><th style="width:96px">日時</th><th>照会内容（入力された質問のまま記録）</th><th style="width:92px">照会元</th><th style="width:150px">状態</th></tr>`+rows;
+}
+function openHist(i){
+  const h=HIST[i];
+  const human=h.human?`
+    <div class="sec"><div class="sl">担当者回答（電話・メールで確認のうえ登録${h.kb?"／ "+h.kb:""}）</div>
+      <div class="kbox">${esc(h.human.body)}
+        <div class="src">確認者：${h.human.by}　${h.human.at}<br>出典：${esc(h.human.src)}</div>
+      </div></div>`:"";
+  const refs=h.refs.length?`<div class="sec"><div class="sl">AI回答時の参照ドキュメント</div><div class="abox">${h.refs.map(esc).join("<br>")}</div></div>`:"";
+  openModal(`
+    <div class="mh"><h2>照会詳細（${h.d}）</h2><button onclick="closeModal()">閉じる</button></div>
+    <div class="sec"><div class="sl">質問（入力された自然文のまま記録）</div><div class="qbox">${esc(h.q)}</div></div>
+    <div class="sec"><div class="sl">自動タグ（AIが質問から判定）</div>
+      <span class="tag">${h.org}</span> <span class="tag">${h.prod}</span> <span class="tag">${h.kind}</span> <span class="tag">照会元：${h.from}</span></div>
+    <div class="sec"><div class="sl">AI回答（要約）</div><div class="abox">${esc(h.ai)}</div></div>
+    ${refs}${human}
+    <div class="sec"><div class="sl">状態</div><span class="st ${h.st}">${h.stt}</span>${h.kb?` <span class="st kb">${h.kb} としてナレッジ化済（次回以降AIが参照）</span>`:""}</div>`);
+}
+function renderDocs(){
+  const rows=DOCS.map((d,i)=>`
+    <tr class="click" onclick="openDoc(${i})">
+      <td class="doc-name">${d.name}<span class="sm">${d.sub}</span></td>
+      <td style="width:110px">${d.kind}</td>
+      <td style="width:190px">${d.prod}</td>
+      <td style="width:150px">${d.ver}</td>
+      <td style="width:80px"><span class="st ai">取込済</span></td>
+    </tr>`).join("");
+  document.getElementById("docTbl").innerHTML=
+    `<tr><th>ドキュメント</th><th style="width:110px">種別</th><th style="width:190px">対象商品</th><th style="width:150px">版・更新日</th><th style="width:80px">状態</th></tr>`+rows;
+}
+function openDoc(i){
+  const d=DOCS[i];
+  const toc=d.toc.map((t,j)=>`<div class="ti${j===d.hl?' hl':''}"><span class="no">${t[0]}</span><span>${t[1]}</span></div>`).join("");
+  openModal(`
+    <div class="mh"><h2>${d.name}<br><span style="font-size:11.5px;color:var(--muted);font-weight:400">${d.sub}　｜　${d.ver}</span></h2><button onclick="closeModal()">閉じる</button></div>
+    <div class="sec"><div class="sl">目次（クリックで該当箇所へ ※モックのため抜粋のみ表示）</div><div class="toc">${toc}</div></div>
+    <div class="sec"><div class="sl">内容（抜粋）</div>
+      <div class="excerpt"><div class="cap">${d.ex[0]}</div>${d.ex[1]}</div></div>
+    <div class="sec" style="font-size:11.5px;color:var(--muted)">※ 本文はデモ用の要約です。AIはこのドキュメントの全文を参照し、回答時に該当箇所を根拠として提示します。</div>`);
+}
+
+/* =============== 回答精度の評価 =============== */
+const RATE_MSG={
+ ok:["承認（自動応対可）","ナレッジDBに「承認済（自動応対可）」として記録しました。将来の応対自動化（DynaAI）導入時に、AIが自動回答してよい範囲に含まれます。"],
+ hold:["保留（人の確認を継続）","ナレッジDBに「未承認（検証中）」として記録しました。引き続き担当者確認のうえでのご案内となります。"],
+ rej:["差戻し（誤りあり）","ナレッジDBに「差戻し」として記録しました。誤案内防止のため自動応対には利用されず、参照データ・プロンプトの改善対象となります。"]};
+function setRate(id,lv){
+  const m=RATE_MSG[lv];
+  document.getElementById("rate"+id).innerHTML=
+   `<div class="ratedone ${lv}"><b>評価を記録しました：${m[0]}</b><br>${m[1]}　<a href="javascript:void(0)" onclick="go('kb')">ナレッジDBで確認 →</a></div>`;
+}
+
+/* =============== ナレッジDB =============== */
+const KB_ST={ok:"承認済（自動応対可）",pend:"未承認（検証中）",rej:"差戻し（再確認）"};
+const KBS=[
+ {no:"KB-0131", t:"フェニックスケアプラス 介護保険金の支払事由（要介護2の取扱い）", org:"鈴木商事株式会社", prod:"フェニックスケアプラス", src:"担当者回答の登録", d:"2026/07/03", st:"pend",
+  body:"介護保険金は、①公的介護保険制度に定める要介護2以上に該当していると認定されたとき、または②会社所定の要介護状態が180日以上継続したと医師により診断確定されたとき、のいずれかで支払対象（要介護2でも①に該当すれば支払対象）。お支払額は傷害死亡重点期間（第1保険期間）中は責任準備金額、経過後（第2保険期間）は保険金額。",
+  by:"企業保険部 佐藤（商品部 高橋へ電話確認）", srcdoc:"商品部「フェニックスケアプラス 取扱要領」3.2（2025年11月版）", ap:null},
+ {no:"KB-0130", t:"経営サポート 契約者変更（法人→個人）の手続きと必要書類", org:"株式会社山田製作所", prod:"経営サポート", src:"AI回答（精度評価）", d:"2026/07/03", st:"ok",
+  body:"契約者変更請求書（様式H-11）、法人の意思決定を確認できる書類（取締役会議事録の写し等）、新契約者の本人確認書類・保険証券を提出。変更時の評価額（解約返戻金相当額等）の税務取扱いは顧問税理士等への確認を案内する。",
+  by:"企業保険部 佐藤（評価：承認）", srcdoc:"法人保険 事務取扱マニュアル 5.1／経営サポート 約款 第14条", ap:"2026/07/03　企業保険部 佐藤"},
+ {no:"KB-0129", t:"プラチナフェニックス 重点期間中の疾病死亡の支払額", org:"佐藤運輸株式会社", prod:"プラチナフェニックス", src:"AI回答（精度評価）", d:"2026/07/01", st:"ok",
+  body:"傷害保障重点期間中の疾病死亡は、死亡保険金額ではなく責任準備金額のお支払い。重点期間経過後は死因を問わず死亡保険金額。個別のお支払額は設計書・現価表の確認を案内する。",
+  by:"企業保険部 田中（評価：承認）", srcdoc:"プラチナフェニックス 約款 第3条／商品パンフレット p.4", ap:"2026/07/01　企業保険部 田中"},
+ {no:"KB-0127", t:"経営サポート 契約者貸付の限度額・利息", org:"―（商品全般）", prod:"経営サポート", src:"AI回答（精度評価）", d:"2026/06/28", st:"pend",
+  body:"貸付限度額は請求日現在の解約返戻金額×所定の貸付率。利息は契約日に応じた貸付利率の複利計算。貸付元利金が解約返戻金額を超える場合は失効の可能性あり。※契約日別の貸付率・利率一覧の出典を確認中のため、検証継続中。",
+  by:"企業保険部 佐藤（評価：保留）", srcdoc:"法人保険 事務取扱マニュアル 6.3／経営サポート 約款 第11条", ap:null},
+ {no:"KB-0124", t:"プラチナフェニックス 保険料の損金算入（最高解約返戻率70％超85％以下）", org:"佐藤運輸株式会社", prod:"プラチナフェニックス", src:"担当者回答の登録", d:"2026/06/25", st:"ok",
+  body:"当該契約の最高解約返戻率は70％超85％以下の区分に該当し、保険期間開始から前半4割の期間は支払保険料×60％を資産計上、残額を損金算入。全額損金にはならない。最終的な経理処理は契約者の顧問税理士の判断による旨を必ず添える。",
+  by:"企業保険部 田中（引受会社 法人サービス部へメール確認）", srcdoc:"引受会社回答メール（2026/06/25受信）／国税庁 法人税基本通達9-3-5の2", ap:"2026/06/26　企業保険部 課長 高橋"},
+ {no:"KB-0108", t:"経営サポート 名義変更後の保険料払込方法", org:"株式会社山田製作所", prod:"経営サポート", src:"担当者回答の登録", d:"2026/05/28", st:"ok",
+  body:"名義変更（法人→個人）後は、新契約者名義の口座振替または送金扱いへ変更する。変更月の保険料の取扱いは払込経路により異なるため、手続き時に案内する。",
+  by:"企業保険部 佐藤", srcdoc:"法人保険 事務取扱マニュアル 5.1・8.2", ap:"2026/06/02　企業保険部 課長 高橋"},
+ {no:"KB-0097", t:"経営サポート 逓増開始前の減額の可否", org:"―（商品全般）", prod:"経営サポート", src:"担当者回答の登録", d:"2026/05/12", st:"rej",
+  body:"「逓増開始前の減額は可能。減額部分は解約扱いとなり解約返戻金が発生する」との回答が登録されたが、出典を特定できなかったため差戻し。出典確認のうえ再登録予定。",
+  by:"企業保険部 田中", srcdoc:"（出典未確認）", ap:"差戻し：2026/05/15　企業保険部 課長 高橋（出典の確認を依頼）"},
+];
+let kbF="all";
+function kbCounts(){
+  const c={ok:0,pend:0,rej:0};
+  KBS.forEach(k=>c[k.st]++);
+  document.getElementById("kbn-ok").textContent=c.ok;
+  document.getElementById("kbn-pend").textContent=c.pend;
+  document.getElementById("kbn-rej").textContent=c.rej;
+}
+function kbFilter(f){
+  kbF=f;
+  for(const k of ["all","ok","pend","rej"]) document.getElementById("kbf-"+k).classList.toggle("on",k===f);
+  renderKB();
+}
+function renderKB(){
+  kbCounts();
+  const rows=KBS.map((k,i)=>({k,i})).filter(o=>kbF==="all"||o.k.st===kbF).map(({k,i})=>`
+    <tr class="click" onclick="openKB(${i})">
+      <td style="width:88px;white-space:nowrap">${k.no}<span class="sm" style="display:block;color:var(--muted);font-size:11px;margin-top:2px">${k.d}</span></td>
+      <td class="qtext">${esc(k.t)}<span class="sm">${esc(k.body.length>64?k.body.slice(0,64)+"…":k.body)}</span></td>
+      <td style="width:150px">${k.org}</td>
+      <td style="width:150px">${k.prod}</td>
+      <td style="width:128px">${k.src}</td>
+      <td style="width:158px"><span class="st ${k.st}">${KB_ST[k.st]}</span></td>
+    </tr>`).join("");
+  document.getElementById("kbTbl").innerHTML=
+    `<tr><th style="width:88px">KB番号</th><th>ナレッジ（質問・回答の要旨）</th><th style="width:150px">企業（契約者）</th><th style="width:150px">商品</th><th style="width:128px">出所</th><th style="width:158px">ステータス</th></tr>`
+    +(rows||`<tr><td colspan="6" style="color:var(--muted)">該当するナレッジはありません。</td></tr>`);
+}
+function openKB(i){
+  const k=KBS[i];
+  const apline=k.ap?`<div class="sec"><div class="sl">承認履歴</div><div class="abox">${esc(k.ap)}</div></div>`:"";
+  const actions=`
+    <div class="mrow">
+      ${k.st!=="ok"?`<button class="apv" onclick="kbSet(${i},'ok')">承認（自動応対可）にする</button>`:""}
+      ${k.st!=="pend"?`<button onclick="kbSet(${i},'pend')">未承認（検証中）に戻す</button>`:""}
+      ${k.st!=="rej"?`<button class="rjt" onclick="kbSet(${i},'rej')">差戻しにする</button>`:""}
+    </div>
+    <div style="font-size:11px;color:var(--muted);text-align:right;margin-top:6px">※ 本モックでは承認操作を体験できます（承認者権限を想定）</div>`;
+  openModal(`
+    <div class="mh"><h2>${k.no}　${esc(k.t)}</h2><button onclick="closeModal()">閉じる</button></div>
+    <div class="sec"><div class="sl">対象</div>
+      <span class="tag">${k.org}</span> <span class="tag">${k.prod}</span> <span class="tag">出所：${k.src}</span> <span class="tag">登録日：${k.d}</span></div>
+    <div class="sec"><div class="sl">ナレッジ内容（AIが回答時に根拠として提示）</div><div class="kbox">${esc(k.body)}<div class="src">登録者：${esc(k.by)}<br>出典：${esc(k.srcdoc)}</div></div></div>
+    <div class="sec"><div class="sl">ステータス</div><span class="st ${k.st}">${KB_ST[k.st]}</span>
+      <span style="font-size:11.8px;color:var(--muted);margin-left:8px">${k.st==="ok"?"応対自動化（DynaAI）導入時にAIが自動回答してよい範囲に含まれます。":k.st==="pend"?"担当者確認を前提とした回答補助でのみ利用されます。":"自動応対・回答補助のいずれにも利用されません（再確認待ち）。"}</span></div>
+    ${apline}${actions}`);
+}
+function kbSet(i,st){
+  KBS[i].st=st;
+  if(st==="ok") KBS[i].ap="2026/07/03　企業保険部 課長 高橋（本モックでの承認操作）";
+  renderKB(); openKB(i);
+}
+
+/* =============== モーダル・ページ切替 =============== */
+function openModal(html){
+  document.getElementById("modalBody").innerHTML=html;
+  document.getElementById("ovl").classList.add("on");
+}
+function closeModal(){ document.getElementById("ovl").classList.remove("on"); }
+const TITLES={chat:["照会回答補助","自然文で質問すると、登録ドキュメントとナレッジを参照して回答します"],
+  hist:["照会履歴","質問と回答の記録。担当者回答の登録でナレッジが積み上がります"],
+  kb:["ナレッジDB","蓄積された回答ナレッジの一覧。承認済（自動応対可）のみが将来の自動回答対象になります"],
+  docs:["ドキュメント","AIが参照する商品パンフレット・約款・マニュアル・ナレッジの一覧"]};
+function go(p){
+  closeModal();
+  for(const k of ["chat","hist","kb","docs"]){
+    document.getElementById("page-"+k).classList.toggle("on",k===p);
+    document.getElementById("nav-"+k).classList.toggle("on",k===p);
+  }
+  document.getElementById("ptitle").textContent=TITLES[p][0];
+  document.getElementById("psub").textContent=TITLES[p][1];
+  scroller.scrollTop=0;
+}
+renderFinder(); renderHist(); renderDocs(); renderKB();
+</script>
+</body>
+</html>
